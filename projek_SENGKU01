@@ -1,0 +1,120 @@
+package main
+
+import (
+    "fmt"
+    "html/template"
+    "net/http"
+    "sync"
+    "time"
+)
+
+type Attendance struct {
+    NIM    string
+    Name   string
+    Time   string
+    Status string
+}
+
+var (
+    // Daftar mahasiswa: NIM → Nama
+    students = map[string]string{
+        "107082500107": "Alvin Setya Wardana",
+        "107082500108": "Budi",
+        "107082500109": "Citra",
+        "107082500110": "Dewi",
+        "107082500111": "Eka",
+    }
+
+    attendanceList []Attendance
+    mu             sync.Mutex
+)
+
+func add(x, y int) int {
+    return x + y
+}
+
+var tmpl = template.Must(
+    template.New("index").
+        Funcs(template.FuncMap{
+            "add": add,
+        }).
+        Parse(`
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Aplikasi Presensi NIM</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f0f8ff; }
+        h1 { text-align: center; }
+        table { border-collapse: collapse; width: 80%; margin: 20px auto; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background: #2196F3; color: white; }
+        tr:nth-child(even) { background: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>📋 Presensi Mahasiswa (NIM)</h1>
+
+    <form method="POST" action="/submit" style="text-align:center;">
+        <input type="text" name="nim" placeholder="Masukkan NIM" required>
+        <input type="submit" value="Presensi">
+    </form>
+
+    <h2 style="text-align:center;">Daftar Kehadiran</h2>
+    <table>
+        <tr>
+            <th>No</th>
+            <th>NIM</th>
+            <th>Nama</th>
+            <th>Waktu</th>
+            <th>Status</th>
+        </tr>
+        {{range $i, $a := .}}
+        <tr>
+            <td>{{add $i 1}}</td>
+            <td>{{$a.NIM}}</td>
+            <td>{{$a.Name}}</td>
+            <td>{{$a.Time}}</td>
+            <td>{{$a.Status}}</td>
+        </tr>
+        {{end}}
+    </table>
+</body>
+</html>
+`))
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        mu.Lock()
+        defer mu.Unlock()
+        tmpl.Execute(w, attendanceList)
+    })
+
+    http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
+        if r.Method == "POST" {
+            nim := r.FormValue("nim")
+            mu.Lock()
+            if name, ok := students[nim]; ok {
+                attendanceList = append(attendanceList, Attendance{
+                    NIM:    nim,
+                    Name:   name,
+                    Time:   time.Now().Format("2006-01-02 15:04:05"),
+                    Status: "Hadir",
+                })
+            } else {
+                attendanceList = append(attendanceList, Attendance{
+                    NIM:    nim,
+                    Name:   "Tidak Dikenal",
+                    Time:   time.Now().Format("2006-01-02 15:04:05"),
+                    Status: "NIM Tidak Valid",
+                })
+            }
+            mu.Unlock()
+        }
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+    })
+
+    fmt.Println("Server berjalan di http://localhost:8080")
+    http.ListenAndServe(":8080", nil)
+}
